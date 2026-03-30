@@ -98,7 +98,7 @@ DECKY_PLUGIN_NAME: str
 """
 The name of the plugin as specified in the 'plugin.json'.
 Environment variable: `DECKY_PLUGIN_NAME`.
-e.g.: `Example Plugin`
+e.g.: `Pocket Protector`
 """
 
 DECKY_PLUGIN_VERSION: str

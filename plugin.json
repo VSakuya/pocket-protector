@@ -1,11 +1,11 @@
 {
-  "name": "Example Plugin",
-  "author": "John Doe",
+  "name": "Pocket Protector",
+  "author": "VSakuya",
   "flags": ["debug", "_root"],
   "api_version": 1,
   "publish": {
-    "tags": ["template", "root"],
-    "description": "Decky example plugin.",
+    "tags": ["pocket_protector", "root"],
+    "description": "A plugin to protect your device from accidentally waking up in your pocket. It uses the light sensor to detect if the device is in a dark environment and prevents accidental wake-ups.",
     "image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
   }
 }

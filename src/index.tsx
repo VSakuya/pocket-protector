@@ -1,115 +1,139 @@
 import {
-  ButtonItem,
+  // ButtonItem,
+  ToggleField,
   PanelSection,
   PanelSectionRow,
-  Navigation,
-  staticClasses
+  // Navigation,
+  staticClasses,
+  // Field
 } from "@decky/ui";
 import {
-  addEventListener,
-  removeEventListener,
+  // addEventListener,
+  // removeEventListener,
   callable,
   definePlugin,
-  toaster,
+  // toaster,
   // routerHook
 } from "@decky/api"
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FaShip } from "react-icons/fa";
+
 
 // import logo from "../assets/logo.png";
 
-// This function calls the python function "add", which takes in two numbers and returns their sum (as a number)
-// Note the type annotations:
-//  the first one: [first: number, second: number] is for the arguments
-//  the second one: number is for the return value
-const add = callable<[first: number, second: number], number>("add");
-
-// This function calls the python function "start_timer", which takes in no arguments and returns nothing.
-// It starts a (python) timer which eventually emits the event 'timer_event'
-const startTimer = callable<[], void>("start_timer");
+// Define callable functions to enable/disable the function itself
+const setEnabled = callable<[enabled: boolean], boolean>("set_enabled");
+const getEnabledState = callable<[], boolean>("get_enabled_state");
+const getLightValue = callable<[], number>("get_light_value");
+const checkShouldSuspend = callable<[], boolean>("should_suspend");
 
 function Content() {
-  const [result, setResult] = useState<number | undefined>();
+  //#region Master Switch
+  const [enabled, setEnabledState] = useState<boolean>(false);
 
-  const onClick = async () => {
-    const result = await add(Math.random(), Math.random());
-    setResult(result);
+  const fetchEnabledState = async () => {
+    try {
+      const state = await getEnabledState();
+      setEnabledState(state);
+    } catch (e) {
+      console.error("Failed to fetch enabled state:", e);
+    }
   };
+  const handleGlobalToggle = async (enabled: boolean) => {
+    setEnabledState(enabled);
+    await setEnabled(enabled);
+  };
+  //#endregion Master Switch
+
+  //#region Sensor Reading
+  const [lightValue, setLightValue] = useState<number | string>("Reading...");
+  useEffect(() => {
+    // Async function to request the sensor data
+    const fetchLightValue = async () => {
+      try {
+        // Execute the strongly-typed callable function
+        const value = await getLightValue();
+
+        if (value === -1) {
+          setLightValue("Error (-1)");
+        } else {
+          setLightValue(value);
+        }
+
+      } catch (e) {
+        console.error("Failed to fetch light sensor value:", e);
+        setLightValue("Connection Failed");
+      }
+    };
+
+    // Fetch immediately on mount
+    fetchLightValue();
+    fetchEnabledState();
+
+    // Set up polling interval (200ms)
+    const getLightValueInterval = setInterval(fetchLightValue, 200);
+
+    // Cleanup interval on dismount to save battery
+    return () => clearInterval(getLightValueInterval);
+  }, []);
+  //#endregion Sensor Reading
 
   return (
-    <PanelSection title="Panel Section">
-      <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={onClick}
-        >
-          {result ?? "Add two numbers via Python"}
-        </ButtonItem>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={() => startTimer()}
-        >
-          {"Start Python timer"}
-        </ButtonItem>
-      </PanelSectionRow>
+    <>
+      <PanelSection title="Controls">
+        <PanelSectionRow>
+          <ToggleField
+            label="Enable Pocket Protector"
+            description="Auto-suspend when packed in a dark bag"
+            checked={enabled}
+            onChange={handleGlobalToggle}
+          />
+        </PanelSectionRow>
+      </PanelSection>
 
-      {/* <PanelSectionRow>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <img src={logo} />
-        </div>
-      </PanelSectionRow> */}
-
-      {/*<PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={() => {
-            Navigation.Navigate("/decky-plugin-test");
-            Navigation.CloseSideMenus();
-          }}
-        >
-          Router
-        </ButtonItem>
-      </PanelSectionRow>*/}
-    </PanelSection>
+      <PanelSection title="Sensor Status">
+        <PanelSectionRow>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '16px' }}>Ambient Light Level</span>
+              <span style={{ fontSize: '12px', color: '#a0a0a0' }}>Values near 0 indicate bag (Lux)</span>
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
+              {lightValue}
+            </div>
+          </div>
+        </PanelSectionRow>
+      </PanelSection>
+    </>
   );
-};
+}
 
 export default definePlugin(() => {
-  console.log("Template plugin initializing, this is called once on frontend startup")
+  console.log("Pocket Protector global background service started.");
 
-  // serverApi.routerHook.addRoute("/decky-plugin-test", DeckyPluginRouterTest, {
-  //   exact: true,
-  // });
-
-  // Add an event listener to the "timer_event" event from the backend
-  const listener = addEventListener<[
-    test1: string,
-    test2: boolean,
-    test3: number
-  ]>("timer_event", (test1, test2, test3) => {
-    console.log("Template got timer_event with:", test1, test2, test3)
-    toaster.toast({
-      title: "template got timer_event",
-      body: `${test1}, ${test2}, ${test3}`
-    });
-  });
+  // This interval runs constantly, even when the UI menu is closed!
+  const backgroundDaemon = setInterval(async () => {
+    try {
+      const suspend = await checkShouldSuspend();
+      if (suspend) {
+        console.log("Pocket Protector: Triggering global suspend via SteamClient!");
+        if (typeof SteamClient !== 'undefined') {
+          SteamClient.System.SuspendPC();
+        }
+      }
+    } catch (e) {
+      console.error("Background daemon failed to reach Python backend", e);
+    }
+  }, 2000); // Check every 2 seconds to save CPU
 
   return {
-    // The name shown in various decky menus
-    name: "Test Plugin",
-    // The element displayed at the top of your plugin's menu
-    titleView: <div className={staticClasses.Title}>Decky Example Plugin</div>,
-    // The content of your plugin's menu
+    name: "Pocket Protector",
+    titleView: <div className={staticClasses.Title}>Pocket Protector</div>,
     content: <Content />,
-    // The icon displayed in the plugin list
     icon: <FaShip />,
-    // The function triggered when your plugin unloads
     onDismount() {
-      console.log("Unloading")
-      removeEventListener("timer_event", listener);
-      // serverApi.routerHook.removeRoute("/decky-plugin-test");
+      // Clean up the global interval if the plugin is unloaded
+      clearInterval(backgroundDaemon);
     },
   };
 });
