@@ -5,6 +5,7 @@ import {
   PanelSectionRow,
   // Navigation,
   staticClasses,
+  // sleep,
   // Field
 } from "@decky/ui";
 import {
@@ -111,20 +112,42 @@ function Content() {
 export default definePlugin(() => {
   console.log("Pocket Protector global background service started.");
 
+
+  let lastTick = Date.now();
+  let cooldownUntil = Date.now() + 10000;
+  let isRunning = true;
+
   // This interval runs constantly, even when the UI menu is closed!
-  const backgroundDaemon = setInterval(async () => {
+  const backgroundDaemon = async () => {
+    if (!isRunning) return;
+    const now = Date.now();
+
+    if (now - lastTick > 5000) {
+      console.log("Pocket Protector: System wake up detected! Entering 10s cooldown.");
+      cooldownUntil = now + 10000;
+    }
+    lastTick = now;
     try {
-      const suspend = await checkShouldSuspend();
-      if (suspend) {
-        console.log("Pocket Protector: Triggering global suspend via SteamClient!");
-        if (typeof SteamClient !== 'undefined') {
-          SteamClient.System.SuspendPC();
+      if (now > cooldownUntil) {
+        const suspend = await checkShouldSuspend();
+        if (suspend) {
+          console.log("Pocket Protector: Triggering global suspend via SteamClient!");
+          if (typeof SteamClient !== 'undefined') {
+            SteamClient.System.SuspendPC();
+            cooldownUntil = Date.now() + 10000;
+          }
         }
       }
     } catch (e) {
       console.error("Background daemon failed to reach Python backend", e);
     }
-  }, 2000); // Check every 2 seconds to save CPU
+    if (isRunning) {
+      setTimeout(backgroundDaemon, 2000);
+    }
+  }
+
+  setTimeout(backgroundDaemon, 2000);
+
 
   return {
     name: "Pocket Protector",
@@ -133,7 +156,7 @@ export default definePlugin(() => {
     icon: <FaShip />,
     onDismount() {
       // Clean up the global interval if the plugin is unloaded
-      clearInterval(backgroundDaemon);
+      isRunning = false;
     },
   };
 });

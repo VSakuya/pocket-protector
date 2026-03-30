@@ -37,6 +37,17 @@ class LightHistoryWindow:
             return 0.0
         return sum(relevant_samples) / len(relevant_samples)
 
+    def should_suspend(self) -> bool:
+        last_inteval = time.time() - self._samples[-1][0] if self._samples else float('inf')
+        if last_inteval > 2:
+            decky.logger.info(f"No light samples in the last {last_inteval:.1f} seconds, skipping suspend check.")
+            return False
+        avg = self.get_average_last_n_seconds(5)
+        if avg != -1.0 and avg < 5:
+            decky.logger.info(f"Suspend triggered! 5-sec average is: {avg}")
+            return True
+        return False
+
 class Plugin:
     def __init__(self):
         # A switch to control globally.
@@ -79,15 +90,7 @@ class Plugin:
         return self.light_history.get_average_last_n_seconds(5)
     
     async def should_suspend(self) -> bool:
-        if not self.is_enabled:
-            return False
-        avg = self.light_history.get_average_last_n_seconds(5)
-        # If average is valid and below 5, it's dark enough to sleep
-        if avg != -1.0 and avg < 5:
-            decky.logger.info(f"Suspend triggered! 5-sec average is: {avg}")
-            return True
-            
-        return False
+        return self.light_history.should_suspend()
 
     async def long_running(self):
         decky.logger.info("Long running task started")
