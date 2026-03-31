@@ -1,15 +1,22 @@
 import os
 import glob
 import time
-import subprocess
 from collections import deque
-
-# The decky plugin module is located at decky-loader/plugin
-# For easy intellisense checkout the decky-loader code repo
-# and add the `decky-loader/plugin/imports` path to `python.analysis.extraPaths` in `.vscode/settings.json`
-import decky
+import decky  # type: ignore
 import asyncio
 
+from settings import SettingsManager  # type: ignore
+# Get environment variable
+settingsDir = os.environ["DECKY_PLUGIN_SETTINGS_DIR"]
+decky.logger.info('Settings path: {}'.format(os.path.join(settingsDir, 'settings.json')))
+settings = SettingsManager(name="settings", settings_directory=settingsDir)
+settings.read()
+
+# The light level below which we consider the environment "dark" and should suspend. This is configurable by the user.
+suspend_threshold = settings.getSetting("suspend_threshold", 2)
+
+# A switch to control globally.
+is_enabled = settings.getSetting("enabled", True)
 
 class LightHistoryWindow:
     def __init__(self, window_seconds: int = 120):
@@ -43,29 +50,64 @@ class LightHistoryWindow:
             decky.logger.info(f"No light samples in the last {last_inteval:.1f} seconds, skipping suspend check.")
             return False
         avg = self.get_average_last_n_seconds(5)
-        if avg != -1.0 and avg < 5:
+        if avg != -1.0 and avg < suspend_threshold:
             decky.logger.info(f"Suspend triggered! 5-sec average is: {avg}")
             return True
         return False
 
 class Plugin:
     def __init__(self):
-        # A switch to control globally.
-        self.is_enabled = True
         # The task running the long-running process.
         self.worker_task = None
         # Keeps the most recent 2 minutes of light samples.
         self.light_history = LightHistoryWindow(window_seconds=120)
     
+    async def settings_read(self):
+        decky.logger.info('Reading settings')
+        return settings.read()
+    
+    async def settings_commit(self):
+        decky.logger.info('Saving settings')
+        return settings.commit()
+    
+    async def settings_getSetting(self, key: str, defaults):
+        decky.logger.info('Get {}'.format(key))
+        return settings.getSetting(key, defaults)
+    
+    async def settings_setSetting(self, key: str, value):
+        decky.logger.info('Set {}: {}'.format(key, value))
+        return settings.setSetting(key, value)
+    
     
     async def set_enabled(self, enabled: bool) -> bool:
-        self.is_enabled = enabled
+        global is_enabled
+        is_enabled = enabled
+        settings.setSetting("enabled", enabled)
+        settings.commit()
         decky.logger.info(f"Plugin enabled set to {enabled}")
-        return self.is_enabled
+        return is_enabled
     
-    async def get_enabled_state(self) -> bool:
-        decky.logger.info(f"Plugin enabled state is {self.is_enabled}")
-        return self.is_enabled
+    async def get_enabled(self) -> bool:
+        settings.read()
+        global is_enabled
+        is_enabled = settings.getSetting("enabled", True)
+        decky.logger.info(f"Plugin enabled state is {is_enabled}")
+        return is_enabled
+    
+    async def set_suspend_threshold(self, threshold: int) -> int:
+        global suspend_threshold
+        suspend_threshold = threshold
+        settings.setSetting("suspend_threshold", threshold)
+        settings.commit()
+        decky.logger.info(f"Suspend threshold set to {threshold}")
+        return suspend_threshold
+    
+    async def get_suspend_threshold(self) -> int:
+        settings.read()
+        global suspend_threshold
+        suspend_threshold = settings.getSetting("suspend_threshold", 2)
+        decky.logger.info(f"Suspend threshold is {suspend_threshold}")
+        return suspend_threshold
 
     async def get_light_history(self) -> dict[int, int]:
         return self.light_history.to_dict()
@@ -80,7 +122,7 @@ class Plugin:
             
             with open(sensor_path[0], "r") as f:
                 value = int(f.read().strip())
-                decky.logger.info(f"Light sensor value: {value}")
+                # decky.logger.info(f"Light sensor value: {value}")
                 return value
         except Exception as e:
             decky.logger.error(f"Error reading light sensor: {e}")
@@ -96,7 +138,7 @@ class Plugin:
         decky.logger.info("Long running task started")
         try:
             while True:
-                if self.is_enabled:
+                if is_enabled:
                     light = await self.get_light_value()
                     self.light_history.add(light)
                 await asyncio.sleep(1)
@@ -130,20 +172,3 @@ class Plugin:
     # Migrations that should be performed before entering `_main()`.
     async def _migration(self):
         pass
-        # decky.logger.info("Migrating")
-        # # Here's a migration example for logs:
-        # # - `~/.config/decky-template/template.log` will be migrated to `decky.decky_LOG_DIR/template.log`
-        # decky.migrate_logs(os.path.join(decky.DECKY_USER_HOME,
-        #                                        ".config", "decky-template", "template.log"))
-        # # Here's a migration example for settings:
-        # # - `~/homebrew/settings/template.json` is migrated to `decky.decky_SETTINGS_DIR/template.json`
-        # # - `~/.config/decky-template/` all files and directories under this root are migrated to `decky.decky_SETTINGS_DIR/`
-        # decky.migrate_settings(
-        #     os.path.join(decky.DECKY_HOME, "settings", "template.json"),
-        #     os.path.join(decky.DECKY_USER_HOME, ".config", "decky-template"))
-        # # Here's a migration example for runtime data:
-        # # - `~/homebrew/template/` all files and directories under this root are migrated to `decky.decky_RUNTIME_DIR/`
-        # # - `~/.local/share/decky-template/` all files and directories under this root are migrated to `decky.decky_RUNTIME_DIR/`
-        # decky.migrate_runtime(
-        #     os.path.join(decky.DECKY_HOME, "template"),
-        #     os.path.join(decky.DECKY_USER_HOME, ".local", "share", "decky-template"))

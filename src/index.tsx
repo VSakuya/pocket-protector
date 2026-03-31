@@ -3,6 +3,7 @@ import {
   ToggleField,
   PanelSection,
   PanelSectionRow,
+  SliderField,
   // Navigation,
   staticClasses,
   // sleep,
@@ -24,9 +25,11 @@ import { FaShip } from "react-icons/fa";
 
 // Define callable functions to enable/disable the function itself
 const setEnabled = callable<[enabled: boolean], boolean>("set_enabled");
-const getEnabledState = callable<[], boolean>("get_enabled_state");
+const getEnabled = callable<[], boolean>("get_enabled");
 const getLightValue = callable<[], number>("get_light_value");
 const checkShouldSuspend = callable<[], boolean>("should_suspend");
+const setSuspendThreshold = callable<[threshold: number], void>("set_suspend_threshold");
+const getSuspendThreshold = callable<[], number>("get_suspend_threshold");
 
 function Content() {
   //#region Master Switch
@@ -34,7 +37,7 @@ function Content() {
 
   const fetchEnabledState = async () => {
     try {
-      const state = await getEnabledState();
+      const state = await getEnabled();
       setEnabledState(state);
     } catch (e) {
       console.error("Failed to fetch enabled state:", e);
@@ -70,6 +73,7 @@ function Content() {
     // Fetch immediately on mount
     fetchLightValue();
     fetchEnabledState();
+    fetchSuspendThreshold();
 
     // Set up polling interval (200ms)
     const getLightValueInterval = setInterval(fetchLightValue, 200);
@@ -78,6 +82,25 @@ function Content() {
     return () => clearInterval(getLightValueInterval);
   }, []);
   //#endregion Sensor Reading
+
+  //#region Suspend Threshold
+  const [suspendThreshold, setSuspendThresholdState] = useState<number>(2);
+
+  const fetchSuspendThreshold = async () => {
+    try {
+      const threshold = await getSuspendThreshold();
+      setSuspendThresholdState(threshold);
+    } catch (e) {
+      console.error("Failed to fetch suspend threshold:", e);
+    }
+  };
+
+  const handleSuspendThresholdChange = async (value: number) => {
+    setSuspendThresholdState(value);
+    await setSuspendThreshold(value);
+  };
+  //#endregion Suspend Threshold
+
 
   return (
     <>
@@ -105,6 +128,20 @@ function Content() {
           </div>
         </PanelSectionRow>
       </PanelSection>
+
+      <PanelSection title="Settings">
+        <PanelSectionRow>
+          <SliderField
+            label="Suspend Threshold"
+            description="Set the light level threshold for auto-suspend (0-10)"
+            min={0}
+            max={100}
+            step={1}
+            value={suspendThreshold}
+            onChange={handleSuspendThresholdChange}
+          />
+        </PanelSectionRow>
+      </PanelSection> 
     </>
   );
 }
