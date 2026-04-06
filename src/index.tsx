@@ -132,8 +132,8 @@ function Content() {
       <PanelSection title="Settings">
         <PanelSectionRow>
           <SliderField
-            label="Suspend Threshold"
-            description="Set the light level threshold for auto-suspend (0-10)"
+            label={`Suspend Threshold (${suspendThreshold})`}
+            description="Set the light level threshold for auto-suspend (0-100)"
             min={0}
             max={100}
             step={1}
